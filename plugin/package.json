@@ -1,0 +1,8 @@
+{
+  "name": "dsh-card-sanguosha",
+  "version": "0.1.0",
+  "description": "三国杀五人身份场，经典标准包",
+  "type": "module",
+  "exports": { ".": "./index.mjs", "./client": "./client.js" },
+  "dsh": { "client": { "platform": "web", "inject": ["dsh-tavern-plugin"] } }
+}
