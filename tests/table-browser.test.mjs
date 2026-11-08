@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import { createServer } from 'node:http'
 import { dirname, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { randomUUID } from 'node:crypto'
@@ -12,11 +13,13 @@ const modeKey = 'dsh-card-sanguosha:five-player'
 
 test('Tavern 卡包桌面可直接选将、点牌、选目标、响应与批量弃牌', { skip: !host }, async () => {
   const fromHost = relative => import(pathToFileURL(join(host, relative)))
-  const [{ createCardPlugins }, { readCardArchive }, { openZipFile }, { createPluginGameModes }] = await Promise.all([
+  const [{ createCardPlugins }, { readCardArchive }, { openZipFile }, { createPluginGameModes }, { serveAssetFile }, { pluginAssetMediaType }] = await Promise.all([
     fromHost('tavern-plugin/lib/domain/card-plugins.js'),
     fromHost('tavern-plugin/lib/domain/card-archive.js'),
     fromHost('tavern-plugin/lib/domain/zip-file.js'),
     fromHost('tavern-plugin/lib/domain/plugin-game-mode.js'),
+    fromHost('tavern-plugin/lib/http-file.js'),
+    fromHost('tavern-plugin/lib/domain/plugin-assets.js'),
   ])
   const require = createRequire(pathToFileURL(join(host, 'package.json')))
   const { chromium } = require('playwright')
@@ -25,10 +28,10 @@ test('Tavern 卡包桌面可直接选将、点牌、选目标、响应与批量�
   const dir = await mkdtemp(join(tmp, 'table-'))
   const pluginsDir = join(dir, 'plugins')
   const zip = await openZipFile(join(root, 'dist/sanguosha.dshcard'))
-  let browser
+  let browser, server
   try {
     const card = await readCardArchive(zip)
-    assert.equal(card.info.version, '0.2.0')
+    assert.equal(card.info.version, '0.3.0')
     assert.ok(card.resolve(card.card.data.assets[0].uri).length)
     const manager = createCardPlugins({ dataRoot: dir, pluginsDir })
     const cardKey = 'sanguosha'
@@ -95,7 +98,8 @@ test('Tavern 卡包桌面可直接选将、点牌、选目标、响应与批量�
       }})};
       const React=modules.react, ReactDOM=modules['react-dom'];
       const useTavernUiExtensions=()=>0, tavernSessionSignals={subscribe:()=>()=>{}};
-      const tavernPluginBoundary=()=>p=>p.children;
+      const Boundary=p=>p.children;
+      const tavernPluginBoundary=()=>Boundary;
       const tavernUiExtensions={gameModeView:key=>key===view?.owner+':'+view?.name?view:null};
       const rpc=(_,input)=>window.modeRPC(input);
       ${client}
@@ -104,6 +108,20 @@ test('Tavern 卡包桌面可直接选将、点牌、选目标、响应与批量�
         React.createElement(TavernGameModeSurface,{sessionId:location.pathname.slice(1),pageHost:true}));
     `
     browser = await chromium.launch({ channel: process.env.TAVERN_BROWSER_CHANNEL || 'chrome', headless: true })
+    server = createServer(async (req, res) => {
+      const { pathname } = new URL(req.url, 'http://127.0.0.1')
+      if (pathname.startsWith('/assets/')) {
+        const file = resolve(pluginDir, pathname.slice(1))
+        if (!file.startsWith(join(pluginDir, 'assets') + sep)) { res.writeHead(404).end(); return }
+        try { await serveAssetFile(req, res, file, pluginAssetMediaType(file)) }
+        catch { if (!res.headersSent) res.writeHead(404).end(); else res.destroy() }
+      } else {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end('<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><div id="app"></div>')
+      }
+    })
+    await new Promise((ready, fail) => server.once('error', fail).listen(0, '127.0.0.1', ready))
+    const origin = 'http://127.0.0.1:' + server.address().port
     const errors = []
     async function open(gameId, viewport) {
       const page = await browser.newPage({ viewport })
@@ -114,15 +132,7 @@ test('Tavern 卡包桌面可直接选将、点牌、选目标、响应与批量�
         calls.push({ gameId, ...input })
         return { mode: await hostMode.execute(gameId, input) }
       })
-      await page.route('http://127.0.0.1/**', async route => {
-        const { pathname } = new URL(route.request().url())
-        if (pathname === '/assets/table.css' || pathname === '/assets/generals.webp') {
-          return route.fulfill({ path: join(pluginDir, pathname.slice(1)) })
-        }
-        return route.fulfill({ contentType: 'text/html',
-          body: '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><div id="app"></div>' })
-      })
-      await page.goto('http://127.0.0.1/' + gameId)
+      await page.goto(origin + '/' + gameId)
       await page.addScriptTag({ content: bundle })
       await page.waitForFunction(() => {
         const board = document.querySelector('[data-sanguosha-host]')?.shadowRoot.querySelector('.board')
@@ -135,6 +145,10 @@ test('Tavern 卡包桌面可直接选将、点牌、选目标、响应与批量�
     await game.getByRole('button', { name: '开始五人身份场' }).click()
     await game.getByRole('heading', { name: '你的身份', exact: true }).waitFor()
     await game.getByRole('button', { name: '进入选将' }).click()
+    await game.waitForFunction(() => {
+      const music = document.querySelector('[data-sanguosha-host]')?.shadowRoot.querySelector('audio[loop]')
+      return music && !music.paused && music.readyState >= 2
+    }, null, { timeout: 10000 })
     const pick = game.getByRole('button', { name: '选择武将 刘备' })
     await pick.click()
     assert.equal(await pick.getAttribute('aria-pressed'), 'true')
@@ -149,19 +163,33 @@ test('Tavern 卡包桌面可直接选将、点牌、选目标、响应与批量�
     const play = game.getByRole('button', { name: '出牌', exact: true })
     await strike.click()
     assert.ok(await play.isDisabled())
+    await strike.click({ button: 'right' })
+    assert.equal(await strike.getAttribute('aria-pressed'), 'false')
+    await strike.click()
     const legalTarget = game.locator('[data-seat="' + target + '"] button.portrait')
     await legalTarget.click()
     assert.ok(await play.isEnabled())
     assert.equal((await hostMode.view('flow')).revision, before.revision, '选牌和目标只改变界面')
     if (process.env.SANGUOSHA_PREVIEW) await game.locator('.board').screenshot({ path: process.env.SANGUOSHA_PREVIEW })
-    await play.click()
+    const sound = game.waitForResponse(response => /\/assets\/noname\/sound\/sha-(?:male|female)\.mp3$/.test(response.url()))
+    await legalTarget.press('Enter')
+    assert.ok((await sound).ok())
     await game.locator('[aria-label="已打出的牌"] .playing-card').first().waitFor()
     const recent = (await hostMode.view('flow')).data.moves
     assert.ok(recent.some(move => move.name === '杀' && move.targets.includes(target)))
     await game.getByRole('button', { name: '回退一步', exact: true }).click()
     await game.getByRole('button', { name: '继续', exact: true }).waitFor()
     await game.getByRole('button', { name: '撤销回退', exact: true }).click()
+    const music = await game.locator('audio[loop]').elementHandle()
+    await game.getByRole('button', { name: '声音设置', exact: true }).click()
+    const volume = game.getByRole('slider', { name: /背景音乐/ })
+    await volume.press('Home')
+    assert.ok(await music.evaluate(player => player.paused))
+    await volume.press('ArrowRight')
+    assert.equal(await volume.inputValue(), '1')
+    await game.getByRole('button', { name: '关闭', exact: true }).click()
     await game.getByRole('button', { name: '返回酒馆', exact: true }).click()
+    assert.ok(await music.evaluate(player => player.paused))
     await game.getByRole('button', { name: '返回游戏页面', exact: true }).click()
     await game.locator('.seat').first().waitFor()
 
@@ -192,6 +220,7 @@ test('Tavern 卡包桌面可直接选将、点牌、选目标、响应与批量�
     assert.deepEqual(errors, [])
   } finally {
     await browser?.close()
+    if (server?.listening) await new Promise(done => server.close(done))
     await zip.close()
     const verified = await realpath(dir)
     if (verified.startsWith(tmp + sep + 'table-')) await rm(verified, { recursive: true, force: true })

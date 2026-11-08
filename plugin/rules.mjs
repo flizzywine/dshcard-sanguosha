@@ -57,7 +57,7 @@ function draw(s, id, n, reason = '摸牌') {
     p.hand.push(card)
     gained++
   }
-  if (gained) event(s, `${label(s, id)} · ${reason}，获得 ${gained} 张手牌。`)
+  if (gained) event(s, `${label(s, id)} · ${reason}，获得 ${gained} 张手牌。`, null, { kind: 'draw', actor: id })
 }
 
 function removeFrom(zone, id) {
@@ -856,7 +856,7 @@ Object.assign(steps, {
     const p = player(s, actor), killer = player(s, source)
     p.alive = false
     take(s, p, [...board(p), ...p.delay.map(card => card.id)], s.discard)
-    event(s, label(s, actor) + ' 阵亡，身份为 ' + p.role + '。')
+    event(s, label(s, actor) + ' 阵亡，身份为 ' + p.role + '。', null, { kind: 'death', actor })
     const survivors = alive(s)
     if (p.role === '主公') s.winner = survivors.length === 1 && survivors[0].role === '内奸' ? '内奸' : '反贼'
     else if (!survivors.some(other => other.role === '反贼' || other.role === '内奸')) s.winner = '主忠'
@@ -1092,7 +1092,12 @@ function describeChoice({ task, ...option }, ownCards) {
 
 function tableView(s) {
   const data = perspective(s, s.human)
-  const visible = s.log.filter(entry => !entry.to && entry.cue)
+  const cues = s.log.filter(entry => !entry.to && entry.cue)
+  data.sounds = cues.slice(-12).map(({ seq, cue }) => defined({
+    seq, kind: cue.kind, actor: cue.actor, name: cue.name,
+    slot: cue.cards?.length ? CARDS[cue.name]?.slot : undefined,
+  }))
+  const visible = cues.filter(({ cue }) => cue.kind !== 'draw' && cue.kind !== 'death')
   const lastTurn = visible.at(-1)?.cue.turn
   data.moves = visible.filter(entry => entry.cue.turn === lastTurn).slice(-6).map(entry => {
     const { cards, ...cue } = entry.cue

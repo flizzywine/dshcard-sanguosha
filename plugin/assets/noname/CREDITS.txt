@@ -1,0 +1,7 @@
+无名杀 v1.11.6.1
+https://github.com/libnoname/noname/releases/tag/v1.11.6.1
+
+table.jpg 来自 image/background/ol_bg.jpg。
+parchment.png 来自 theme/simple/card.png。
+cards/ 来自 image/card/。
+sound/ 来自 audio/background/music_default.mp3、audio/card/ 和 audio/effect/。

@@ -8,43 +8,41 @@ window.__ModuleLoader__.load({ id: 'dsh-card-sanguosha', factory: require => {
   const factions = { 魏: '#395a77', 蜀: '#963f37', 吴: '#3b6350', 群: '#806444' }
   const initials = { 主公: '主', 忠臣: '忠', 反贼: '反', 内奸: '内' }
   const positions = [
-    { x: 89, y: 80 }, { x: 88, y: 69 }, { x: 64, y: 46 }, { x: 36, y: 46 }, { x: 12, y: 69 },
+    { x: 0, y: 0 }, { x: 87, y: 1 }, { x: 63, y: 0 }, { x: 37, y: 0 }, { x: 13, y: 1 },
   ]
+  const cardArt = {
+    杀: 'sha', 闪: 'shan', 桃: 'tao', 决斗: 'juedou', 过河拆桥: 'guohe', 顺手牵羊: 'shunshou',
+    南蛮入侵: 'nanman', 万箭齐发: 'wanjian', 无中生有: 'wuzhong', 五谷丰登: 'wugu', 桃园结义: 'taoyuan',
+    借刀杀人: 'jiedao', 无懈可击: 'wuxie', 乐不思蜀: 'lebu', 闪电: 'shandian', 诸葛连弩: 'zhuge',
+    雌雄双股剑: 'cixiong', 青釭剑: 'qinggang', 青龙偃月刀: 'qinglong', 丈八蛇矛: 'zhangba', 贯石斧: 'guanshi',
+    方天画戟: 'fangtian', 麒麟弓: 'qilin', 寒冰剑: 'hanbing', 八卦阵: 'bagua', 仁王盾: 'renwang',
+    赤兔: 'chitu', 大宛: 'dawan', 紫骍: 'zixin', 的卢: 'dilu', 爪黄飞电: 'zhuahuang', 绝影: 'jueying',
+  }
   let assets
 
-  function Surface({ children, onKeyDown }) {
+  function Surface({ children, onKeyDown, onContextMenu, onClickCapture }) {
     const ref = React.useRef(null)
     const [root, setRoot] = React.useState(null)
     React.useLayoutEffect(() => setRoot(ref.current.shadowRoot || ref.current.attachShadow({ mode: 'open' })), [])
     return h('div', { ref, 'data-sanguosha-host': '' }, root && createPortal(h(React.Fragment, null,
       h('link', { rel: 'stylesheet', href: assets('table.css') }),
-      h('main', { className: 'board', 'aria-label': title, onKeyDown,
-        style: { '--atlas': 'url("' + assets('generals.webp') + '")' } }, h(Medallion), children)), root))
-  }
-
-  function Medallion() {
-    const swirl = 'M112 68c-18-3-30-15-27-33 2-11 12-17 21-15 6 1 11 7 10 13-1 6-5 9-11 9 17 10 22 29 12 43-13 20-40 20-55 5-7-7-9-19-2-27 6-7 17-9 25-2 6 5 5 12-1 17 13 1 22-6 28-10Z'
-    return h('svg', { className: 'medallion', viewBox: '0 0 240 240', 'aria-hidden': true },
-      h('g', { fill: 'none', stroke: 'currentColor' },
-        ...[116, 111, 102, 82, 78].map(r => h('circle', { key: r, cx: 120, cy: 120, r, strokeWidth: r === 102 ? 3 : 1 })),
-        h('circle', { cx: 120, cy: 120, r: 107, strokeWidth: 4, strokeDasharray: '1 6' }),
-        ...[0, 90, 180, 270].map(angle => h('path', { key: angle, d: swirl, transform: 'rotate(' + angle + ' 120 120)', strokeWidth: 1.7 }))),
-      h('text', { x: 120, y: 148, textAnchor: 'middle', fontFamily: 'KaiTi,serif', fontSize: 63, fill: 'currentColor' }, '漢'))
+      h('main', { className: 'board', 'aria-label': title, tabIndex: 0, onKeyDown, onContextMenu, onClickCapture,
+        style: { '--atlas': 'url("' + assets('generals.webp') + '")' } }, children)), root))
   }
 
   function Badge({ role }) {
     return h('span', { className: 'role role-mark', 'data-role': role, title: role || '身份未明', 'aria-label': role || '身份未明' }, initials[role] || '？')
   }
 
-  function Bar({ data, onRecords, onInfo, records }) {
+  function Bar({ data, onRecords, onInfo, onAudio, overlay }) {
     return h('header', { className: 'bar' },
       h('div', { className: 'brand' }, h('span', { className: 'seal', 'aria-hidden': true }, '漢'),
         h('strong', null, '汉末五席'), h('small', null, '标准身份场')),
-      h('span', { className: 'legend' }, '主 ×1　忠 ×1　反 ×2　内 ×1'),
       h('div', { className: 'bar-end' },
         data?.turn > 0 && h('span', { className: 'pill round-pill' }, '第 ' + data.turn + ' 回合'),
         data?.turn > 0 && h('span', { className: 'deck', title: '牌堆与弃牌堆' }, '牌堆 ' + data.deckCount + ' · 弃 ' + data.discardCount),
-        onRecords && h('button', { className: 'small-button', type: 'button', onClick: onRecords, 'aria-expanded': records }, '记录'),
+        onRecords && h('button', { className: 'small-button', type: 'button', onClick: onRecords, 'aria-expanded': overlay === 'log' }, '记录'),
+        onAudio && h('button', { className: 'small-button', type: 'button', onClick: onAudio, 'aria-expanded': overlay === 'audio', 'aria-label': '声音设置' }, '♫'),
         onInfo && h('button', { className: 'small-button', type: 'button', onClick: onInfo }, '规则')))
   }
 
@@ -79,7 +77,7 @@ window.__ModuleLoader__.load({ id: 'dsh-card-sanguosha', factory: require => {
       return h(interactive ? 'button' : 'span', props, card.as || card.name)
     })
     return h('article', { className: cls, 'data-position': position, 'data-seat': seat.id,
-      'aria-label': position === 0 ? '我的武将' : name, style: { '--seat-x': x + '%', '--seat-y': y + 'px' } },
+      'aria-label': position === 0 ? '我的武将' : name, style: { '--seat-x': x + '%', '--seat-offset': y } },
       h(Portrait, { ...seat, pressed: Boolean(selected), onClick: target ? () => onTarget(seat.id) : undefined, actionLabel: '选择目标 ' + name }),
       selected > 0 && h('span', { className: 'target-number', 'aria-hidden': true }, selected),
       flash && h('span', { key: flash.seq, className: 'hit ' + flash.kind }, (flash.kind === 'heal' ? '+' : '−') + flash.amount),
@@ -88,23 +86,15 @@ window.__ModuleLoader__.load({ id: 'dsh-card-sanguosha', factory: require => {
       seat.general && h('button', { type: 'button', className: 'seat-info', 'aria-label': '查看' + name + '技能', onClick: () => onInfo(seat.id) }, 'i'))
   }
 
-  const icons = {
-    杀: ['M13 49 45 12l10-3-3 11-35 33M19 42l14 14M16 47l-9 10 5 5 9-10'],
-    闪: ['M36 5 12 36h18l-5 23 29-35H36l7-19ZM7 45h9M47 49h10'],
-    桃: ['M34 23c-19-13-31 7-22 23 9 17 34 15 44-3 9-16-7-23-22-20Zm0 0c4-11 12-15 20-13-1 9-9 14-20 13Z', 'M35 23c-9 10-8 22 0 29'],
-    trick: ['M17 12h39v10H17a5 5 0 0 1 0-10Zm4 10v28h27V22M21 50h31a5 5 0 0 1 0 10H15a5 5 0 0 1 0-10h6ZM28 29h13m-13 7h12m-12 7h8'],
-    equip: ['M11 55 48 18m-4-3 12-9-3 14-9 8M13 51l7 7M29 32c-4-7-10-12-18-11 1 12 6 18 13 18'],
-    armor: ['M32 8c6 7 16 10 24 12-1 17-7 28-24 38C15 48 9 37 8 20c8-2 18-5 24-12Z', 'M32 20 44 32 32 45 20 32Zm0 8v8'],
-    mount: ['M15 54c9-8 12-17 11-26L22 15l10 5L39 9l4 15 11 13-4 9-12-3c-3 4-4 7-4 11Z', 'M40 30h1m-16-4c-6 4-11 9-13 17'],
-  }
-
   function Card({ card, as, choose, selected, unavailable, appearance }) {
     const name = as || card.name
-    const family = card.slot ? 'equip' : card.trick || card.delay || !['杀', '闪', '桃'].includes(name) ? 'trick' : 'basic'
-    const category = card.slot || (card.delay ? '延时锦囊' : family === 'trick' ? '锦囊' : '基本牌')
+    const transformed = as && as !== card.name
+    const slot = transformed ? null : card.slot
+    const delay = transformed ? ['乐不思蜀', '闪电'].includes(name) : card.delay
+    const family = slot ? 'equip' : ['杀', '闪', '桃'].includes(name) ? 'basic' : 'trick'
+    const category = slot || (delay ? '延时锦囊' : family === 'trick' ? '锦囊' : '基本牌')
     const rank = ({ 1: 'A', 11: 'J', 12: 'Q', 13: 'K' })[card.rank] || card.rank
-    const gear = card.slot === '防具' ? 'armor' : card.slot?.endsWith('马') ? 'mount' : family
-    const paths = icons[name] || icons[gear] || icons.trick
+    const art = cardArt[name]
     const props = {
       className: ['playing-card', name.length > 2 && 'long', unavailable && 'unavailable', appearance && 'move-card'].filter(Boolean).join(' '),
       'data-family': family, title: card.hint || card.label, 'aria-label': (card.suit || '') + rank + ' ' + name,
@@ -113,10 +103,7 @@ window.__ModuleLoader__.load({ id: 'dsh-card-sanguosha', factory: require => {
     return h(choose ? 'button' : 'div', props,
       h('span', { className: 'rank' + (card.red ? ' red' : ''), 'aria-hidden': true }, h('span', null, rank), h('span', null, card.suit)),
       h('strong', { className: 'card-title' }, name),
-      h('svg', { className: 'card-emblem', viewBox: '0 0 64 64', 'aria-hidden': true, fill: 'none',
-        stroke: 'currentColor', strokeWidth: 2.7, strokeLinecap: 'round', strokeLinejoin: 'round' },
-        h('circle', { cx: 32, cy: 32, r: 27, strokeWidth: .8, strokeDasharray: '1 3', opacity: .58 }),
-        ...paths.map(d => h('path', { key: d, d }))),
+      art && h('img', { className: 'card-art', src: assets('noname/cards/' + art + '.png'), alt: '', draggable: false }),
       h('span', { className: 'card-kind' }, category))
   }
 
@@ -212,16 +199,118 @@ window.__ModuleLoader__.load({ id: 'dsh-card-sanguosha', factory: require => {
         : faceMoves.length ? h('div', { className: 'center-cards', 'aria-label': '已打出的牌' },
           faceMoves.map(({ move, card }) => h(Card, { key: move.seq + ':' + card.id, card, appearance: true,
             as: ['play', 'respond'].includes(move.kind) ? move.name : undefined })))
-          : h('div', { className: 'cue-empty', 'aria-hidden': true }, '行牌'),
+          : null,
       last && h('p', { className: 'cue-caption', title: last.text }, last.text))
   }
 
   function Routes({ paths, me, ordered, transient }) {
-    if (!paths.length) return null
-    const coords = [positions[me], ...paths.map(i => positions[i])]
-    const point = p => p.x + ' ' + (p.y === 80 ? 85 : p.y === 69 ? 24 : 17)
-    return h('svg', { className: 'target-lines' + (transient ? ' transient' : ''), viewBox: '0 0 100 100', preserveAspectRatio: 'none', 'aria-hidden': true },
-      coords.slice(1).map((p, i) => h('path', { key: i, vectorEffect: 'non-scaling-stroke', d: 'M ' + point(ordered ? coords[i] : coords[0]) + ' L ' + point(p) })))
+    const svg = React.useRef(null)
+    const [centers, setCenters] = React.useState([])
+    React.useLayoutEffect(() => {
+      const board = svg.current.parentElement
+      const measure = () => {
+        const area = svg.current.getBoundingClientRect()
+        setCenters(Array.from(board.querySelectorAll('.seat .portrait'), portrait => {
+          const rect = portrait.getBoundingClientRect()
+          return [(rect.left + rect.width / 2 - area.left), (rect.top + rect.height / 2 - area.top)]
+        }))
+      }
+      measure()
+      const observer = new ResizeObserver(measure)
+      observer.observe(board)
+      return () => observer.disconnect()
+    }, [])
+    const coords = [centers[me], ...paths.map(i => centers[i])]
+    return h('svg', { ref: svg, className: 'target-lines' + (transient ? ' transient' : ''), 'aria-hidden': true },
+      coords.every(Boolean) && coords.slice(1).map(([x2, y2], i) => {
+        const [x1, y1] = ordered ? coords[i] : coords[0]
+        return h('line', { key: i, x1, y1, x2, y2 })
+      }))
+  }
+
+  const soundKey = 'dsh-card-sanguosha:audio'
+  const audioUrl = name => assets('noname/sound/' + name + '.mp3')
+  const equipSound = { 武器: 'equip1', 防具: 'equip2', 防御马: 'equip3', 进攻马: 'equip4' }
+  const effectSound = { draw: 'draw', discard: 'discard', judge: 'judge', heal: 'recover' }
+
+  function useAudio(data, gameId, paused) {
+    const [volume, setVolume] = React.useState(() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem(soundKey)) || {}
+        const read = (name, fallback) => Number.isFinite(saved[name]) ? Math.max(0, Math.min(100, saved[name])) : fallback
+        return { music: read('music', 24), effects: read('effects', 60) }
+      } catch { return { music: 24, effects: 60 } }
+    })
+    const music = React.useRef(null)
+    const voice = React.useRef(null)
+    const effect = React.useRef(null)
+    const started = React.useRef(false)
+    const head = data.history.at(-1)?.seq ?? 0
+    const previous = React.useRef({ gameId, head })
+
+    function applyMusic(level) {
+      const player = music.current
+      if (!player) return
+      player.volume = level / 100
+      if (started.current && level) void player.play().catch(() => {})
+      else player.pause()
+    }
+    function start() {
+      started.current = true
+      if (volume.music && music.current?.paused) applyMusic(volume.music)
+    }
+    function adjust(name, level) {
+      const next = { ...volume, [name]: level }
+      setVolume(next)
+      try { localStorage.setItem(soundKey, JSON.stringify(next)) } catch {}
+      applyMusic(next.music)
+      for (const player of [voice.current, effect.current]) {
+        if (!player) continue
+        player.volume = next.effects / 100
+        if (!next.effects) player.pause()
+      }
+    }
+    React.useEffect(() => {
+      const last = previous.current
+      previous.current = { gameId, head }
+      if (paused || last.gameId !== gameId || head < last.head) {
+        voice.current?.pause()
+        effect.current?.pause()
+        return
+      }
+      if (head === last.head || !started.current || !volume.effects) return
+      let spoken, sound
+      for (const cue of data.sounds || []) {
+        if (cue.seq <= last.head) continue
+        const gender = data.seats[cue.actor - 1]?.general?.female ? 'female' : 'male'
+        if (cue.kind === 'play' || cue.kind === 'respond') {
+          const id = cardArt[cue.name]
+          spoken = id && id !== 'tao' ? id + '-' + gender : 'card'
+          if (equipSound[cue.slot]) sound = equipSound[cue.slot]
+        } else if (cue.kind === 'damage') {
+          sound = cue.seq % 2 ? 'damage' : 'damage2'
+        } else if (cue.kind === 'death') {
+          sound = 'die_' + gender
+        } else if (effectSound[cue.kind]) {
+          sound = effectSound[cue.kind]
+        }
+      }
+      for (const [player, name] of [[voice.current, spoken], [effect.current, sound]]) {
+        if (!player || !name) continue
+        player.src = audioUrl(name)
+        player.volume = volume.effects / 100
+        void player.play().catch(() => {})
+      }
+    }, [data.seats, data.sounds, gameId, head, paused, volume.effects])
+    // Pause even when Tavern removes the page's shadow-root portal.
+    const [musicRef, voiceRef, effectRef] = React.useMemo(() => [music, voice, effect].map(ref => node => {
+      ref.current = node
+      if (node) return () => { node.pause(); ref.current = null }
+    }), [])
+    return { volume, start, adjust, players: h(React.Fragment, null,
+      h('audio', { ref: musicRef, src: audioUrl('music'), preload: 'none', loop: true }),
+      h('audio', { ref: voiceRef, preload: 'none' }),
+      h('audio', { ref: effectRef, preload: 'none' })) }
   }
 
   function History({ entries, close }) {
@@ -239,7 +328,7 @@ window.__ModuleLoader__.load({ id: 'dsh-card-sanguosha', factory: require => {
 
   const rules = '五人身份场。一主、一忠、两反、一内。主公先亮明身份、选将并行动。每人起手四张。回合依次经过准备、判定、摸牌、出牌、弃牌和结束。手牌上限等于当前体力。击杀反贼摸三张，主公击杀忠臣弃光手牌和装备。'
 
-  function Game({ data, busy, advance, revision, paused, error, resume }) {
+  function Game({ data, gameId, busy, advance, revision, paused, error, resume }) {
     const attempted = React.useRef(null)
     const last = React.useRef(null)
     const [input, setInput] = React.useState(null)
@@ -255,6 +344,7 @@ window.__ModuleLoader__.load({ id: 'dsh-card-sanguosha', factory: require => {
     const own = data.seats[data.self - 1]
     const locked = busy || paused || Boolean(error)
     const lastCue = data.moves?.at(-1)?.seq
+    const audio = useAudio(data, gameId, paused)
 
     React.useEffect(() => {
       if (!auto || busy || paused || error || attempted.current === revision) return
@@ -281,21 +371,31 @@ window.__ModuleLoader__.load({ id: 'dsh-card-sanguosha', factory: require => {
     }
     const recovery = h(Recovery, { paused, error, busy, retry, local: auto && data.npc === 'model' ? local : null })
     const showInfo = id => setOverlay(overlay === id ? null : id)
-    function escape(event) {
-      if (event.key !== 'Escape') return
+    function cancel(event) {
+      event.preventDefault()
       if (overlay !== null) setOverlay(null)
       else change(null)
     }
     const info = typeof overlay === 'number' ? data.seats[overlay - 1] : null
     const popovers = h(React.Fragment, null,
       overlay === 'log' && h(History, { entries: data.history, close: () => setOverlay(null) }),
+      overlay === 'audio' && h('aside', { className: 'popover audio-settings', 'aria-label': '声音设置' },
+        h('header', null, h('h2', null, '声音设置'),
+          h('button', { className: 'small-button', type: 'button', onClick: () => setOverlay(null) }, '关闭')),
+        [['music', '背景音乐'], ['effects', '音效与报牌']].map(([name, label]) =>
+          h('label', { key: name }, h('span', null, label), h('input', { type: 'range', min: 0, max: 100,
+            value: audio.volume[name], onChange: event => audio.adjust(name, Number(event.target.value)) }),
+          h('output', null, audio.volume[name] + '%')))),
       (overlay === 'rules' || info) && h('aside', { className: 'popover info', 'aria-label': '详情' },
         h('header', null, h('h2', null, info?.general?.name || '本局规则'),
           h('button', { className: 'small-button', type: 'button', onClick: () => setOverlay(null) }, '关闭')),
         h('p', null, info?.general?.skills || rules)))
-    const bar = h(Bar, { data, onInfo: () => setOverlay(overlay === 'rules' ? null : 'rules'),
-      onRecords: () => setOverlay(overlay === 'log' ? null : 'log'), records: overlay === 'log' })
-    if (!data.turn) return h(Surface, { onKeyDown: escape }, bar, h(Opening, { data, plan, change, send, locked, recovery }), popovers)
+    const bar = h(Bar, { data, onInfo: () => showInfo('rules'),
+      onRecords: () => showInfo('log'), onAudio: () => showInfo('audio'), overlay })
+    if (!data.turn) return h(Surface, { onKeyDown: event => {
+      if (event.key === 'Escape' && (overlay !== null || plan.option !== null)) cancel(event)
+    }, onClickCapture: audio.start }, audio.players, bar,
+    h(Opening, { data, plan, change, send, locked, recovery }), popovers)
 
     function chooseCard(id) {
       if (multi) {
@@ -342,13 +442,27 @@ window.__ModuleLoader__.load({ id: 'dsh-card-sanguosha', factory: require => {
       : needsTarget ? targetHint : readyHint || (plan.skill && !routes.exact ? plan.skill + ' · 选择要使用的牌' : phaseHint)
     const hidePlain = act?.kind === 'market' || multi
     const pass = routes.pass
+    function shortcuts(event) {
+      if (event.key === 'Escape' && (overlay !== null || isSelected)) return cancel(event)
+      if (event.defaultPrevented || event.repeat || event.ctrlKey || event.altKey || event.metaKey || locked || overlay !== null) return
+      const target = event.target
+      if (target.closest('input, textarea, select, [contenteditable], button:not(.playing-card):not(.portrait)')) return
+      if (event.key === 'Enter' && ready) {
+        event.preventDefault()
+        confirm()
+      } else if (pass && ((event.key === ' ' && act.kind !== 'play') || (event.key.toLowerCase() === 'e' && act.kind === 'play'))) {
+        event.preventDefault()
+        send({ choice: pass.index })
+      }
+    }
     const selectedMove = (data.moves || []).findLast(move => move.kind === 'play' && move.targets?.length)
     const routeSource = plan.targets.length ? 0 : seatPositions[selectedMove?.actor]
     const routeTargets = (plan.targets.length ? plan.targets : selectedMove?.targets || [])
       .filter(id => seatPositions[id] !== routeSource).map(id => seatPositions[id])
 
-    return h(Surface, { onKeyDown: escape }, bar,
-      routeSource !== undefined && h(Routes, { key: plan.targets.length ? 'selection' : selectedMove?.seq,
+    return h(Surface, { onKeyDown: shortcuts, onClickCapture: audio.start,
+      onContextMenu: event => { if (overlay !== null || isSelected) cancel(event) } }, audio.players, bar,
+      routeSource !== undefined && routeTargets.length > 0 && h(Routes, { key: plan.targets.length ? 'selection' : selectedMove?.seq,
         me: routeSource, paths: routeTargets, ordered: Boolean(plan.targets.length && routes.exact?.ui.ordered), transient: !plan.targets.length }),
       order.map((seat, position) => h(Seat, {
         key: seat.id, seat, position, active: seat.id === data.current && !data.winner,
@@ -359,7 +473,7 @@ window.__ModuleLoader__.load({ id: 'dsh-card-sanguosha', factory: require => {
       })),
       h(Center, { data, routes, plan, change, locked }),
       h('section', { className: 'dock', 'aria-label': '手牌与技能' },
-        h('div', { className: 'hand' + (!data.hand.length ? ' empty' : ''), 'aria-label': '我的手牌' },
+        h('div', { className: 'hand' + (!data.hand.length ? ' empty' : ''), 'aria-label': '我的手牌', style: { '--hand-count': data.hand.length } },
           data.hand.length ? data.hand.map(card => h(Card, {
             key: card.id, card, selected: plan.cards.includes(card.id), unavailable: !auto && !routes.cards.includes(card.id),
             choose: !locked && routes.cards.includes(card.id) ? () => chooseCard(card.id) : undefined,

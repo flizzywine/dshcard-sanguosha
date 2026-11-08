@@ -2,17 +2,22 @@
 
 DSH Tavern 独立人物卡。经典标准版五人身份场，一位真人与四位对手。身份为一主、一忠、两反、一内，牌池为 25 名武将和 108 张游戏牌（含 EX）。
 
+[下载最新版人物卡（sanguosha.dshcard）](https://github.com/flizzywine/dshcard-sanguosha/releases/latest/download/sanguosha.dshcard)
+
 ## 开局
 
 1. 用支持 `gameMode` 和独立游戏页面的 DSH Tavern main 版本导入 `dist/sanguosha.dshcard`，启用卡内插件。
 2. 新开游玩，在专属页面点击「开始五人身份场」。亮身份后点「进入选将」，默认使用本地策略。也可在「对手设置」选择本局后台模型，NPC 主动出牌时会调用独立代理。
 3. 点选武将并确认。出牌时从底边点手牌或技能，再点桌上的目标武将，最后点「出牌」。响应和弃牌也直接点牌，牌桌中央显示刚打出的牌。Tavern 保存对局并提供回退与恢复。
+4. 桌面端可按 Enter 确认，按 Esc 或右键清除选择，按空格跳过响应，按 E 结束出牌。点击牌桌右上角「♫」可分别调整背景音乐与音效，音量设为零即可静音。
 
 ## 本地开发
 
 Node.js 22.19 或更新版本。运行 `node --test tests/*.test.mjs` 和 `node build.mjs`。打包脚本可以用 `node build.mjs <输出路径>` 指定产物位置。
 
 沿用 [月下六席](https://github.com/flizzywine/dshcard-werewolf) 的独立卡包结构与打包工具，遵循 AGPL-3.0。五人身份分配与标准版牌池见[规则说明](https://game.qidian.com/Game/showNews/index?name=sgs&nid=1082111)和[标准版 FAQ](https://ks3-cn-beijing.ksyun.com/attachment/74ad98665ac744c138ba8c988d85d149)。牌桌交互参考[三国杀 精彩对局](https://www.bilibili.com/video/BV1fT411G7wA/)。封面为自制文字图案，武将图集由内置 ImageGen 生成。
+
+牌桌布局参考无名杀的简约主题。`plugin/assets/noname/` 中的桌布、游戏牌插画、背景音乐、报牌及音效来自 [无名杀 v1.11.6.1](https://github.com/libnoname/noname/releases/tag/v1.11.6.1) 的 `image`、`theme` 与 `audio` 目录。
 
 <details>
 <summary>武将图集生成提示词</summary>
