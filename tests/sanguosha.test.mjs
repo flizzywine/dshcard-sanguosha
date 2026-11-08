@@ -108,9 +108,9 @@ test('行动投影只公开有权查看的身份、选项与手牌', () => {
 })
 
 test('后台模型只收到当前武将的视角，返回非法选项时由本地策略推进', async () => {
-  const s = createState(981)
-  s.pending.actor = s.human = s.lord === 1 ? 2 : 1
-  await gameMode.advance({ state: s, input: { choice: 1 } })
+  const s = setup(['刘备', '关羽', '曹操', '赵云', '孙权'], { 1: ['杀', '桃'] })
+  s.human = 2
+  s.npc = 'model'
   const actor = s.pending.actor
   assert.equal(actor, s.lord)
   const result = await gameMode.advance({ state: s, input: null, agent: async ({ member, prompt }) => {
@@ -118,12 +118,65 @@ test('后台模型只收到当前武将的视角，返回非法选项时由本�
     const view = JSON.parse(prompt)
     assert.equal(view.self, actor)
     assert.equal(view.seats.filter(p => p.role).length, 1)
-    assert.equal(view.action.options.length, 5)
+    assert.equal(view.action.kind, 'play')
+    assert.ok(view.action.options.some(option => option.name === '杀'))
     assert.ok(!('deck' in view))
     return { text: '{"choice":999}' }
   } })
-  assert.equal(result.state.players[actor - 1].general, '刘备')
+  assert.ok(result.state.log.some(entry => entry.text.includes('使用 杀')))
   assert.ok(result.events.every(event => typeof event.text === 'string'))
+})
+
+test('亮明主公武将后立即轮到真人选将，其余身份保密', () => {
+  const s = createState(981)
+  s.pending.actor = s.human = s.lord === 1 ? 2 : 1
+  accept(s, 0)
+  assert.equal(s.pending.actor, s.lord)
+  accept(s, 0)
+  assert.equal(s.pending.actor, s.human)
+  const view = gameMode.project({ state: s })
+  assert.equal(view.seats[s.lord - 1].general.name, '刘备')
+  assert.equal(view.seats.filter(p => p.general).length, 1)
+  assert.equal(view.action.kind, 'general')
+})
+
+test('桌面只投射已经亮出的牌，攻击的实体牌和目标可用于直接点选', () => {
+  const s = setup(['刘备', '孙权', '张飞', '刘备', '赵云'], { 1: ['杀'], 2: ['闪'] })
+  const view = gameMode.project({ state: s })
+  const slash = view.action.options.find(option => option.name === '杀' && option.targets[0] === 2)
+  assert.deepEqual(slash.ui, { cards: [view.hand[0].id], skill: null, targets: [2], ordered: false })
+  assert.deepEqual(view.moves, [])
+  accept(s, slash.index)
+  const after = gameMode.project({ state: s })
+  assert.equal(after.action.kind, 'auto')
+  assert.equal(after.moves.at(-1).cards[0].name, '杀')
+  assert.deepEqual(after.moves.at(-1).targets, [2])
+  assert.ok(!JSON.stringify(after).includes(cardLabel(s.players[1].hand[0])))
+})
+
+test('一次确认多张弃牌或制衡，拒绝重复或越界的牌', async () => {
+  const discard = setup(['刘备', '孙权', '张飞', '赵云', '曹操'], { 1: ['杀', '闪', '桃'] })
+  discard.players[0].hp = 1
+  discard.stack.push({ type: 'turn', actor: 2 }, { type: 'discardPhase', actor: 1 })
+  choose(discard, option => option.kind === 'pass')
+  const { selection } = gameMode.project({ state: discard }).action
+  assert.equal(selection.min, 2)
+  assert.equal(selection.max, 2)
+  const [a, b] = selection.cards
+  await assert.rejects(gameMode.advance({ state: discard, input: { selection: [a, a] } }), /数量和区域/)
+  assert.equal(discard.players[0].hand.length, 3)
+  await gameMode.advance({ state: discard, input: { selection: [a, b] } })
+  assert.ok(discard.discard.includes(a) && discard.discard.includes(b))
+  assert.equal(discard.players[0].hand.length, 1)
+
+  const balance = setup(['孙权', '刘备', '张飞', '赵云', '曹操'], { 1: ['杀', '闪', '桃'] })
+  choose(balance, option => option.name === '制衡')
+  const cost = gameMode.project({ state: balance }).action.selection
+  assert.equal(cost.min, 1)
+  assert.equal(cost.max, 3)
+  await gameMode.advance({ state: balance, input: { selection: cost.cards.slice(0, 2) } })
+  assert.equal(balance.players[0].hand.length, 3)
+  assert.equal(balance.flags.zhiheng, true)
 })
 
 test('多局经过 JSON 存档往返后仍守恒，三方均可达成胜利', () => {

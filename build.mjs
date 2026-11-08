@@ -1,5 +1,5 @@
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { writeZipEntries } from './lib/zip-entries.js'
 import { pluginManifestProblem } from './lib/plugin-manifest.js'
@@ -29,8 +29,11 @@ const entries = [
   { path: cover, content: await readFile(resolve(here, 'cover.png')) },
   { path: 'LICENSE', content: await readFile(resolve(here, 'LICENSE')) },
 ]
-for (const file of (await readdir(resolve(here, 'plugin'))).sort()) {
-  entries.push({ path: plugin + file, content: await readFile(resolve(here, 'plugin', file)) })
+const pluginRoot = resolve(here, 'plugin')
+const files = (await readdir(pluginRoot, { recursive: true, withFileTypes: true }))
+  .filter(file => file.isFile()).map(file => join(file.parentPath, file.name)).sort()
+for (const file of files) {
+  entries.push({ path: plugin + relative(pluginRoot, file).split(sep).join('/'), content: await readFile(file) })
 }
 await mkdir(dirname(target), { recursive: true })
 await writeFile(target, writeZipEntries(entries))

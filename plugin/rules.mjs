@@ -19,8 +19,8 @@ const cardPick = (card, task, info = {}) => pick(cardLabel(card), task, { card, 
 const push = (s, ...tasks) => s.stack.push(...tasks.filter(Boolean).reverse())
 const suits = ['♠', '♥', '♣', '♦']
 
-function event(s, text, to = null) {
-  s.log.push({ seq: ++s.seq, text, to })
+function event(s, text, to = null, cue) {
+  s.log.push({ seq: ++s.seq, text, to, ...(cue && { cue: { ...cue, turn: s.turn } }) })
   if (s.log.length > 80) s.log.shift()
 }
 
@@ -125,7 +125,8 @@ const heal = (s, p, n, cause) => {
   const recovered = Math.min(n, p.maxHp - p.hp)
   if (!p.alive || recovered <= 0) return
   p.hp += recovered
-  event(s, `${label(s, p.id)} · ${cause}，回复 ${recovered} 点体力。`)
+  event(s, `${label(s, p.id)} · ${cause}，回复 ${recovered} 点体力。`, null,
+    { kind: 'heal', actor: p.id, amount: recovered })
 }
 
 function offer(s, actor, prompt, choices, kind) {
@@ -213,8 +214,10 @@ const steps = {
     if (actor === s.lord) {
       event(s, '主公选用 ' + name + '。')
       const pool = shuffle(s, Object.keys(GENERALS).filter(candidate => candidate !== name))
-      push(s, ...order(s, s.lord, true).filter(id => id !== s.lord).map((id, index) =>
-        action('offerGeneral', { actor: id, names: pool.slice(index * 3, index * 3 + 3) })), action('deal'))
+      const offers = order(s, s.lord, true).filter(id => id !== s.lord).map((id, index) =>
+        action('offerGeneral', { actor: id, names: pool.slice(index * 3, index * 3 + 3) }))
+      const human = offers.find(offer => offer.actor === s.human)
+      push(s, human, ...offers.filter(offer => offer !== human), action('deal'))
     }
   },
   offerGeneral(s, { actor, names }) { chooseGeneral(s, actor, names) },
@@ -302,10 +305,12 @@ const steps = {
       cardPick(card, action('discardOne', { actor, card }), { kind: 'discard' })), 'discard')
   },
   skipDiscard(s) { s.flags.skipDiscard = true; event(s, '吕蒙发动克己，跳过弃牌阶段。') },
-  discardOne(s, { actor, card }) {
+  discardOne(s, { actor, card }) { steps.discardMany(s, { actor, cards: [card] }) },
+  discardMany(s, { actor, cards }) {
     push(s, action('discardPhase', { actor }))
-    take(s, player(s, actor), [card], s.discard)
-    event(s, label(s, actor) + ' 弃置 ' + cardLabel(card) + '。')
+    take(s, player(s, actor), cards, s.discard)
+    event(s, label(s, actor) + ' 弃置 ' + cards.map(cardLabel).join('、') + '。', null,
+      { kind: 'discard', actor, cards })
   },
   endPhase(s, { actor }) {
     s.phase = '结束'
@@ -475,7 +480,11 @@ Object.assign(steps, {
     if (name === '杀' && active) s.flags.slashes++
     if (name === '杀' && actor === s.current && s.phase === '出牌') s.flags.playSlash = true
     if (!supplied) take(s, p, cards, s.table)
-    event(s, `${label(s, actor)}${skill ? ' · ' + skill : ''} 使用 ${name}${targets.length ? ' → ' + targets.map(id => label(s, id)).join('、') : ''}（${cards.map(cardLabel).join('、')}）。`)
+    const global = ['五谷丰登', '桃园结义'].includes(name)
+    const area = global || ['南蛮入侵', '万箭齐发'].includes(name)
+    const affected = area ? order(s, actor).filter(id => global || id !== actor) : targets
+    event(s, `${label(s, actor)}${skill ? ' · ' + skill : ''} 使用 ${name}${targets.length ? ' → ' + targets.map(id => label(s, id)).join('、') : ''}（${cards.map(cardLabel).join('、')}）。`, null,
+      { kind: 'play', actor, name, cards, targets: affected })
     // Losing the cost can trigger a skill before the card's effect.
     const loss = []
     while (s.stack.at(-1)?.type === 'optionalDraw') loss.push(s.stack.pop())
@@ -484,8 +493,7 @@ Object.assign(steps, {
     if (info.delay) return push(s, ...loss, action('installDelay', { actor: targets[0] ?? actor, name, id: cards[0] }))
     if (name === '桃') return push(s, ...loss, action('restore', { actor, n: 1, reason: '桃' }), cleanup)
     if (name === '杀') return push(s, ...loss, ...order(s, actor).filter(id => targets.includes(id)).map(target => beginSlash(s, actor, target, form, targets)), cleanup)
-    const aoe = ['五谷丰登', '桃园结义', '南蛮入侵', '万箭齐发'].includes(name)
-    const ids = aoe ? order(s, actor).filter(id => id !== actor || name === '五谷丰登' || name === '桃园结义') : [targets[0] ?? actor]
+    const ids = area ? affected : [targets[0] ?? actor]
     push(s, ...loss, is(p, '黄月英') && !skill ? action('optionalDraw', { actor, n: 1, skill: '集智' }) : null,
       name === '五谷丰登' ? action('revealMarket', { count: ids.length }) : null,
       ...ids.map(target => action('trick', { actor, target, extra: targets[1], name, cards })),
@@ -522,7 +530,8 @@ Object.assign(steps, {
   cancelTrick(s, { actor, card, next }) {
     push(s, { ...next, canceled: !next.canceled, queue: order(s, actor, true) })
     take(s, player(s, actor), [card], s.discard)
-    event(s, label(s, actor) + ' 使用 ' + cardLabel(card) + '。')
+    event(s, label(s, actor) + ' 使用 ' + cardLabel(card) + '。', null,
+      { kind: 'respond', actor, name: '无懈可击', cards: [card], targets: [next.target] })
   },
   trickEffect(s, { actor, target, extra, name, cards }) {
     if (name === '无中生有') return draw(s, target, 2, name)
@@ -604,7 +613,8 @@ Object.assign(steps, {
     take(s, p, form.cards, inTable ? s.table : s.discard)
     if (inTable) push(s, action('cleanup', { cards: form.cards }))
     if (name === '杀' && s.phase === '出牌' && (s.current === actor || s.current === supplier)) s.flags.playSlash = true
-    event(s, `${label(s, p.id)}${supplier ? ' 为' + label(s, actor) : ''} 打出 ${formLabel(form)}。`)
+    event(s, `${label(s, p.id)}${supplier ? ' 为' + label(s, actor) : ''} 打出 ${formLabel(form)}。`, null,
+      { kind: 'respond', actor: p.id, name, cards: form.cards, targets: task.target ? [task.target] : [] })
   },
   aid(s, { task, helpers, skill }) {
     const [id, ...rest] = helpers
@@ -742,7 +752,8 @@ Object.assign(steps, {
     const id = top(s)
     if (id !== undefined) s.table.push(id)
     if (id === undefined) return push(s, { ...task, type: 'judgeResult' })
-    event(s, `${label(s, task.actor)} · ${task.reason}判定，翻开 ${cardLabel(id)}。`)
+    event(s, `${label(s, task.actor)} · ${task.reason}判定，翻开 ${cardLabel(id)}。`, null,
+      { kind: 'judge', actor: task.actor, name: task.reason, cards: [id] })
     push(s, { ...task, type: 'retrial', id, queue: order(s, s.current) })
   },
   retrial(s, task) {
@@ -761,7 +772,8 @@ Object.assign(steps, {
     discardTable(s, next.id)
     push(s, { ...next, id: card })
     take(s, player(s, actor), [card], s.table)
-    event(s, label(s, actor) + ' · 鬼才，以 ' + cardLabel(card) + ' 改判。')
+    event(s, label(s, actor) + ' · 鬼才，以 ' + cardLabel(card) + ' 改判。', null,
+      { kind: 'judge', actor, name: '鬼才', cards: [card], targets: [next.actor] })
   },
   judgeResult(s, task) {
     const { actor, id, reason } = task
@@ -813,7 +825,8 @@ Object.assign(steps, {
       const key = source + ':' + actor
       s.attitudes[key] = (s.attitudes[key] || 0) - n
     }
-    event(s, `${label(s, actor)} ${lose ? '失去' : '受到'} ${n} 点${lose ? '体力' : '伤害'}${source ? ' · 来源 ' + label(s, source) : ''}。`)
+    event(s, `${label(s, actor)} ${lose ? '失去' : '受到'} ${n} 点${lose ? '体力' : '伤害'}${source ? ' · 来源 ' + label(s, source) : ''}。`, null,
+      { kind: 'damage', actor, amount: n })
     if (!lose) push(s, action('afterDamage', { actor, source, n, cards }))
     if (p.hp <= 0) {
       event(s, label(s, actor) + ' 进入濒死，需回复至至少 1 点体力。')
@@ -1033,6 +1046,72 @@ export function perspective(s, id) {
   }
 }
 
+function selectionFor(s) {
+  const { actor, kind, choices } = s.pending
+  if (kind === 'discard') {
+    const p = player(s, actor)
+    const count = p.hand.length - Math.max(0, p.hp)
+    return { min: count, max: count, cards: choices.map(option => option.card), selected: [],
+      task: action('discardMany', { actor }) }
+  }
+  if (kind !== 'cost') return null
+  const costs = choices.filter(option => option.kind === 'selectCost')
+  const commit = choices.find(option => option.kind === 'commitCost')
+  const task = costs[0]?.task || commit?.task
+  if (!task) return null
+  const selected = commit?.task.selected || task.selected.slice(0, -1)
+  const cards = [...selected, ...costs.map(option => option.card)]
+  const type = ({ giveMenu: 'rende', zhihengMenu: 'zhiheng' })[task.type] || task.type
+  const multi = type === 'rende' || type === 'zhiheng'
+  const min = task.skill === '结姻' ? 2 : 1
+  return { cards, selected, min, max: multi ? cards.length : min,
+    task: action(multi ? type : 'resolveSkill', { actor, target: task.target, source: task.source, skill: task.skill }) }
+}
+
+function acceptSelection(s, cards) {
+  const spec = selectionFor(s)
+  if (!spec || !Array.isArray(cards) || cards.length < spec.min || cards.length > spec.max ||
+    new Set(cards).size !== cards.length || !cards.every(id => spec.cards.includes(id))) {
+    throw Error('请选择符合当前数量和区域要求的牌')
+  }
+  s.pending = null
+  push(s, spec.task.type === 'discardMany' ? { ...spec.task, cards } : { ...spec.task, selected: cards })
+  pump(s)
+}
+
+function describeChoice({ task, ...option }, ownCards) {
+  const card = Number.isInteger(option.card) && ownCards.includes(option.card) ? [option.card] : []
+  const cards = task.form?.cards || (['axe', 'retaliationCost'].includes(task.type) ? task.cards : card)
+  const skill = task.form?.skill || (option.group?.startsWith('武将技 · ') ? option.name : null)
+    || (option.label.startsWith('发动 ') ? option.label.slice(3) : null)
+    || (task.type === 'redirect' ? '流离' : null)
+  const targets = task.type === 'paySkill' && task.skill === '离间' ? [task.target, task.source]
+    : task.type === 'yijiGive' ? [] : task.targets || option.targets || []
+  return { cards, skill, targets, ordered: option.kind === 'borrow' || task.skill === '离间' }
+}
+
+function tableView(s) {
+  const data = perspective(s, s.human)
+  const visible = s.log.filter(entry => !entry.to && entry.cue)
+  const lastTurn = visible.at(-1)?.cue.turn
+  data.moves = visible.filter(entry => entry.cue.turn === lastTurn).slice(-6).map(entry => {
+    const { cards, ...cue } = entry.cue
+    return { seq: entry.seq, text: entry.text, ...cue, cards: (cards || []).map(describe) }
+  })
+  if (data.action?.options) {
+    const ownCards = board(player(s, s.human))
+    data.action.options = data.action.options.map((option, index) => ({
+      ...option, ui: describeChoice(s.pending.choices[index], ownCards),
+    }))
+    const spec = selectionFor(s)
+    if (spec) {
+      const { task, ...selection } = spec
+      data.action.selection = selection
+    }
+  }
+  return data
+}
+
 function relation(data, attitudes, id) {
   if (id === data.self) return 2
   const target = data.seats.find(p => p.id === id)
@@ -1135,7 +1214,7 @@ async function modelChoice(s, agent, signal) {
 export const gameMode = {
   name: MODE, title: TITLE, version: 1,
   create() { return { state: createState() } },
-  project({ state }) { return perspective(state, state.human) },
+  project({ state }) { return tableView(state) },
   foreground({ data }) {
     return data.history.filter(entry => !entry.private).map(entry => entry.text).join('\n') || TITLE
   },
@@ -1144,7 +1223,10 @@ export const gameMode = {
     const seq = s.seq
     signal?.throwIfAborted()
     if (!s.pending) throw Error('本局已结束')
-    if (s.pending.actor === s.human) accept(s, input?.choice)
+    if (s.pending.actor === s.human) {
+      if (input?.selection !== undefined) acceptSelection(s, input.selection)
+      else accept(s, input?.choice)
+    }
     else {
       if (input?.local === true) {
         s.npc = 'local'
@@ -1153,9 +1235,9 @@ export const gameMode = {
       const turn = s.turn
       for (let i = 0; i < 10 && s.pending && s.pending.actor !== s.human && s.turn === turn; i++) {
         signal?.throwIfAborted()
-        const strategic = ['play', 'general'].includes(s.pending.kind) && s.npc === 'model'
+        const strategic = s.pending.kind === 'play' && s.npc === 'model'
         accept(s, strategic ? await modelChoice(s, agent, signal) : localChoice(s))
-        if (strategic) break
+        if (strategic || s.log.some(entry => entry.seq > seq && !entry.to && entry.cue)) break
       }
     }
     return { state: s, events: s.log.filter(entry => entry.seq > seq && !entry.to).map(({ text }) => ({ text })) }
